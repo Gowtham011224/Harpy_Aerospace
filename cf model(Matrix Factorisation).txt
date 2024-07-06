@@ -1,0 +1,114 @@
+import pandas as pd
+import numpy as np
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+
+#load the dataset
+url = 'http://files.grouplens.org/datasets/movielens/ml-100k/u.data'
+columns = ['userId', 'movieId', 'rating', 'timestamp']
+ratings_data = pd.read_csv(url, sep='\t', names=columns)
+
+ratings_data['userId'] = ratings_data['userId'].astype('category').cat.codes.values
+ratings_data['movieId'] = ratings_data['movieId'].astype('category').cat.codes.values
+# Split data into training and testing sets
+train, test = train_test_split(ratings_data, test_size=0.2, random_state=42)
+
+# Build recommendation model
+num_users = len(ratings_data['userId'].unique())
+num_movies = len(ratings_data['movieId'].unique())
+embedding_size = 50
+
+user_input = tf.keras.layers.Input(shape=(1,), name='user_input')
+movie_input = tf.keras.layers.Input(shape=(1,), name='movie_input')
+
+user_embedding = tf.keras.layers.Embedding(input_dim=num_users, output_dim=embedding_size, input_length=1, name='user_embedding')(user_input)
+movie_embedding = tf.keras.layers.Embedding(input_dim=num_movies, output_dim=embedding_size, input_length=1, name='movie_embedding')(movie_input)
+
+user_flatten = tf.keras.layers.Flatten()(user_embedding)
+movie_flatten = tf.keras.layers.Flatten()(movie_embedding)
+
+prod = tf.keras.layers.Dot(axes=1)([user_flatten, movie_flatten])
+
+model = tf.keras.Model(inputs=[user_input, movie_input], outputs=prod)
+model.compile(optimizer='adam', loss='mean_squared_error')
+
+# Train the model
+history = model.fit([train['userId'], train['movieId']], train['rating'],
+                    batch_size=64, epochs=10,
+                    validation_data=([test['userId'], test['movieId']], test['rating']))
+
+# Visualize training history
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.show()
+
+# Example prediction
+user_id = 5  # Example user ID
+movie_id = 12  # Example movie ID
+predicted_rating = model.predict([np.array([user_id]), np.array([movie_id])])
+print(f'Predicted rating for user {user_id} and movie {movie_id}: {predicted_rating[0][0]}')
+
+# Rating distribution
+plt.hist(ratings_data['rating'], bins=10, edgecolor='brown')
+plt.title('Rating-Frequency Distribution')
+plt.xlabel('Rating')
+plt.ylabel('Frequency')
+plt.show()
+
+# Number of ratings per user
+ratings_per_user = ratings_data.groupby('userId').size()
+plt.hist(ratings_per_user, bins=100, edgecolor='black')
+plt.title('Ratings per User')
+plt.xlabel('Ratings')
+plt.ylabel('Users')
+plt.show()
+
+# Number of ratings per movie
+ratings_per_movie = ratings_data.groupby('movieId').size()
+plt.hist(ratings_per_movie, bins=100, edgecolor='black')
+plt.title('Ratings per Movie')
+plt.xlabel('Ratings')
+plt.ylabel('Movies')
+plt.show()
+
+# Average rating per user
+avg_rating_per_user = ratings_data.groupby('userId')['rating'].mean()
+plt.hist(avg_rating_per_user, bins=10, edgecolor='black')
+plt.title('Average Rating per User')
+plt.xlabel('Average Rating')
+plt.ylabel('Users')
+plt.show()
+
+# Average rating per movie
+avg_rating_per_movie = ratings_data.groupby('movieId')['rating'].mean()
+plt.hist(avg_rating_per_movie, bins=75, edgecolor='black')
+plt.title('Average Rating per Movie')
+plt.xlabel('Average Rating')
+plt.ylabel('No. of Movies')
+plt.show()
+
+# Pie chart of ratings
+rating_counts = ratings_data['rating'].value_counts()
+plt.pie(rating_counts, labels=rating_counts.index, autopct='%2.3f%%', startangle=270)
+plt.title('Rating Distribution')
+plt.show()
+
+# Bar plot of top 10 most rated movies
+top_25_movies = ratings_data['movieId'].value_counts().head(25)
+plt.bar(top_25_movies.index, top_25_movies.values, color='darkgreen')
+plt.title('Top 25 Most Rated Movies')
+plt.xlabel('Movie ID')
+plt.ylabel('Count of Ratings')
+plt.show()
+
+# Bar plot of top 10 highest average rating movies
+top_50_avg_rated_movies = ratings_data.groupby('movieId')['rating'].mean().nlargest(50)
+plt.bar(top_50_avg_rated_movies.index, top_50_avg_rated_movies.values, color='indigo')
+plt.title('Top 50 Highest Average Rating Movies')
+plt.xlabel('Movie ID')
+plt.ylabel('Average Rating')
+plt.show()

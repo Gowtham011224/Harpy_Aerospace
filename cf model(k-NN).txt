@@ -1,0 +1,151 @@
+#installing requirements.txt
+
+!git clone https://github.com/tensorflow/examples
+%cd examples/lite/examples/recommendation/ml/
+!pip install -r requirements.txt
+
+#important libraries
+
+!pip install surprise
+import pandas as pd
+from surprise import Dataset, Reader, SVD
+from surprise.model_selection import train_test_split
+from surprise import accuracy
+
+# Download and unzip the dataset
+DATASET_LINK = 'http://files.grouplens.org/datasets/movielens/ml-100k.zip'
+!wget -nc $DATASET_LINK
+!unzip -n ml-100k.zip
+
+# Load the dataset
+column_names = ['user_id', 'item_id', 'rating', 'timestamp']
+data = pd.read_csv('ml-100k/u.data', sep='\t', names=column_names)
+
+# Load item information
+item_info = pd.read_csv('ml-100k/u.item', sep='|', header=None, encoding='latin-1')
+item_info = item_info[[0, 1]]
+item_info.columns = ['item_id', 'title']
+
+# Display basic info
+print("Dataset info:")
+print(data.info())
+print("\nFirst few rows of the dataset:")
+print(data.head())
+
+DATASET_LINK='http://files.grouplens.org/datasets/movielens/ml-100k.zip'
+!wget -nc http://files.grouplens.org/datasets/movielens/ml-100k.zip
+!unzip -n ml-100k.zip
+
+#loading movielens dataset
+
+overall_stats = pd.read_csv('ml-100k/u.info', header=None)
+print("Details of users, items and ratings involved in the loaded movielens dataset: ",list(overall_stats[0]))
+
+## same item id is same as movie id, item id column is renamed as movie id
+column_names1 = ['user id','movie id','rating','timestamp']
+ratings_dataset = pd.read_csv('ml-100k/u.data', sep='\t',header=None,names=column_names1)
+ratings_dataset.head()
+
+# Load the dataset
+column_names = ['user_id', 'item_id', 'rating', 'timestamp']
+data = pd.read_csv('ml-100k/u.data', sep='\t', names=column_names)
+
+# Load item information
+item_info = pd.read_csv('ml-100k/u.item', sep='|', header=None, encoding='latin-1')
+item_info = item_info[[0, 1]]
+item_info.columns = ['item_id', 'title']
+
+# Display basic info
+print("Dataset info:")
+print(data.info())
+print("\nFirst few rows of the dataset:")
+print(data.head())
+
+
+
+# NCF MODEL
+
+from scipy.sparse import csr_matrix
+from sklearn.neighbors import NearestNeighbors
+
+# Create a pivot table
+user_item_matrix = data.pivot(index='user_id', columns='item_id', values='rating').fillna(0)
+user_item_sparse_matrix = csr_matrix(user_item_matrix.values)
+
+# Fit the k-NN model
+knn = NearestNeighbors(metric='cosine', algorithm='brute')
+knn.fit(user_item_sparse_matrix)
+
+# Define the Recommendation Function
+
+def recommend_movies(user_id, num_recommendations=5):
+    distances, indices = knn.kneighbors(user_item_matrix.loc[user_id, :].values.reshape(1, -1), n_neighbors=num_recommendations+1)
+    indices = indices.flatten()
+    distances = distances.flatten()
+
+    recommendations = []
+    for i in range(1, len(indices)):
+        movie_id = user_item_matrix.columns[indices[i]]
+        recommendations.append((item_info[item_info['item_id'] == movie_id]['title'].values[0], distances[i]))
+
+    return recommendations
+
+# Get recommendations for a user
+user_id = 3
+num_recommendations = 15
+recommendations = recommend_movies(user_id, num_recommendations)
+
+print(f"Top {num_recommendations} recommendations for User {user_id}:")
+for i, (title, distance) in enumerate(recommendations):
+    print(f"{i+1}: {title} (distance: {distance})")
+
+#visualising rating distribution
+import matplotlib.pyplot as plt
+
+# Rating distribution
+plt.figure(figsize=(10, 6))
+data['rating'].value_counts().sort_index().plot(kind='bar', color='orange')
+plt.title('Distribution of Ratings')
+plt.xlabel('Rating')
+plt.ylabel('Count')
+plt.xticks(rotation=0)
+plt.show()
+
+#visualisng top recommendations
+def recommend_movies_visual(user_id, num_recommendations=5,clr='skyblue'):
+    distances, indices = knn.kneighbors(user_item_matrix.loc[user_id, :].values.reshape(1, -1), n_neighbors=num_recommendations+1)
+    indices = indices.flatten()
+    distances = distances.flatten()
+
+    recommendations = []
+    for i in range(1, len(indices)):
+        movie_id = user_item_matrix.columns[indices[i]]
+        title = item_info[item_info['item_id'] == movie_id]['title'].values[0]
+        recommendations.append((title, distances[i]))
+
+    # Plotting recommendations
+    plt.figure(figsize=(10, 8))
+    y_pos = range(len(recommendations))
+    plt.barh(y_pos, [distance for _, distance in recommendations], align='center', color=clr)
+    plt.yticks(y_pos, [title for title, _ in recommendations])
+    plt.xlabel('Distance')
+    plt.title(f'Top {num_recommendations} Recommendations for User {user_id}')
+    plt.gca().invert_yaxis()  # Invert y-axis to show highest distance at the top
+    plt.show()
+
+    return recommendations
+
+# Get recommendations and visualize for user_id 3
+user_id = 3
+num_recommendations = 15
+recommendations = recommend_movies_visual(user_id, num_recommendations)
+# Get recommendations and visualize for user_id 3
+user_id = 15
+num_recommendations = 15
+recommendations = recommend_movies_visual(user_id, num_recommendations, 'purple')
+# Get recommendations and visualize for user_id 3
+user_id = 8
+num_recommendations = 8
+recommendations = recommend_movies_visual(user_id, num_recommendations, 'yellow')
+
+

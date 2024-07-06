@@ -1,0 +1,159 @@
+!pip install -q tensorflow-recommenders matplotlib scikit-learn tabulate
+
+import tensorflow as tf
+import tensorflow_datasets as tfds
+import tensorflow_recommenders as tfrs
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras import layers
+from sklearn.manifold import TSNE
+from tabulate import tabulate
+
+
+# Load the MovieLens dataset
+ratings = tfds.load("movielens/100k-ratings", split="train")
+movies = tfds.load("movielens/100k-movies", split="train")
+
+# Prepare the data
+ratings = ratings.map(lambda x: {
+    "movie_title": x["movie_title"],
+    "user_id": x["user_id"],
+    "timestamp": x["timestamp"]
+})
+
+movies = movies.map(lambda x: x["movie_title"])
+
+# Define the user and movie model with additional features.
+user_ids_vocabulary = tf.keras.layers.StringLookup()
+movie_titles_vocabulary = tf.keras.layers.StringLookup()
+
+user_ids_vocabulary.adapt(ratings.map(lambda x: x["user_id"]))
+movie_titles_vocabulary.adapt(movies)
+
+# Convert the movie titles to a TensorFlow Dataset
+movies = tf.data.Dataset.from_tensor_slices(list(movies))
+
+# Define the GNN layer
+class GNNLayer(layers.Layer):
+    def __init__(self, units):
+        super(GNNLayer, self).__init__()
+        self.units = units
+        self.dense = layers.Dense(units)
+
+    def call(self, inputs, edge_index):
+        x = inputs
+        row, col = edge_index[:, 0], edge_index[:, 1]
+        out = tf.math.unsorted_segment_sum(x[col], row, num_segments=tf.shape(x)[0])
+        return self.dense(out)
+
+class GNNModel(tfrs.Model):
+    def __init__(self, user_model, movie_model, task):
+        super().__init__()
+        self.user_model = user_model
+        self.movie_model = movie_model
+        self.task = task
+
+    def call(self, features):
+        user_embeddings = self.user_model(features["user_id"])
+        movie_embeddings = self.movie_model(features["movie_title"])
+        edge_index = tf.convert_to_tensor([features["user_id"], features["movie_title"]])
+        gnn_layer = GNNLayer(64)
+        user_embeddings = gnn_layer(user_embeddings, edge_index)
+        movie_embeddings = gnn_layer(movie_embeddings, edge_index)
+        return self.task(user_embeddings, movie_embeddings)
+
+    def compute_loss(self, features, training=False):
+        user_embeddings = self.user_model(features["user_id"])
+        movie_embeddings = self.movie_model(features["movie_title"])
+        return self.task(user_embeddings, movie_embeddings)
+
+
+
+# Define user and movie models
+user_model = tf.keras.Sequential([
+    user_ids_vocabulary,
+    tf.keras.layers.Embedding(user_ids_vocabulary.vocabulary_size(), 64),
+    tf.keras.layers.Dense(32, activation="relu")
+])
+
+movie_model = tf.keras.Sequential([
+    movie_titles_vocabulary,
+    tf.keras.layers.Embedding(movie_titles_vocabulary.vocabulary_size(), 64),
+    tf.keras.layers.Dense(32, activation="relu")
+])
+
+# Define the task
+task = tfrs.tasks.Retrieval(metrics=tfrs.metrics.FactorizedTopK(
+    candidates=movies.batch(128).map(movie_model),
+    ks=[5, 10]
+))
+
+# Create and compile the model
+model = GNNModel(user_model, movie_model, task)
+model.compile(optimizer=tf.keras.optimizers.Adam(0.01))
+
+# Train the model and capture the training history
+history = model.fit(ratings.batch(4096), epochs=10, verbose=1)
+
+# Set up brute-force search for retrieval
+index = tfrs.layers.factorized_top_k.BruteForce(model.user_model)
+index.index_from_dataset(
+    movies.batch(100).map(lambda title: (title, model.movie_model(title)))
+)
+
+
+def print_recommendations(user_id):
+    _, titles = index(np.array([user_id]))
+    top_titles = titles[0, :10].numpy()
+    print(f"\nTop 10 recommendations for user {user_id}:")
+    print(tabulate(enumerate(top_titles, 1), headers=["Rank", "Movie Title"], tablefmt="fancy_grid"))
+# Get and print recommendations for a specific user
+print_recommendations("5")
+
+# Get and print recommendations for another user
+print_recommendations("28")
+
+# Plot the training loss and top-k accuracy
+plt.figure(figsize=(18, 8))
+
+# Plot training loss
+plt.subplot(1, 3, 1)
+plt.plot(history.history['loss'], label='Loss')
+plt.title('Training Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+
+# Plot top-5 and top-10 accuracy
+plt.subplot(1, 3, 2)
+plt.plot(history.history['factorized_top_k/top_5_categorical_accuracy'], label='Top-5 Accuracy')
+plt.plot(history.history['factorized_top_k/top_10_categorical_accuracy'], label='Top-10 Accuracy')
+plt.title('Top-K Accuracy')
+plt.xlabel('Epochs')
+plt.ylabel('Accuracy')
+plt.legend()
+
+# Extract embeddings for visualization
+user_embeddings = []
+movie_embeddings = []
+for user_id in ratings.map(lambda x: x["user_id"]).take(100):
+    user_embeddings.append(model.user_model(np.array([user_id.numpy()])))
+
+for movie_title in movies.take(100):
+    movie_embeddings.append(model.movie_model(np.array([movie_title.numpy()])))
+
+user_embeddings = np.vstack(user_embeddings)
+movie_embeddings = np.vstack(movie_embeddings)
+
+# Use t-SNE for dimensionality reduction
+user_tsne = TSNE(n_components=2).fit_transform(user_embeddings)
+movie_tsne = TSNE(n_components=2).fit_transform(movie_embeddings)
+
+# Plot embeddings using t-SNE
+plt.subplot(1, 3, 3)
+plt.scatter(user_tsne[:, 0], user_tsne[:, 1], label='Users', alpha=0.6)
+plt.scatter(movie_tsne[:, 0], movie_tsne[:, 1], label='Movies', alpha=0.6)
+plt.title('t-SNE of User and Movie Embeddings')
+plt.legend()
+
+plt.show()
