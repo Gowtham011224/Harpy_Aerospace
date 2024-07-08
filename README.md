@@ -33,14 +33,14 @@ The dataset used in this project is the [MovieLens 100K dataset](http://files.gr
 ### Model 1: Collaborative Filtering using k-Nearest Neighbors (k-NN)
 This model employs the k-NN algorithm to identify similar users and provide recommendations based on their ratings.
 
-*Source Code available in* 
+*Source Code available in cf model(k-NN).txt* 
 
 ### Model 2: Collaborative Filtering using Matrix Factorization
 This model uses matrix factorization techniques to decompose the user-item interaction matrix into latent factors for users and items.
 
-*Source Code available in* 
+*Source Code available in cf model(k-NN).txt* 
 
-### Model 2: Collaborative Filtering using Matrix Factorization
+### Model 3: G Neural Network
 This model uses matrix factorization techniques to decompose the user-item interaction matrix into latent factors for users and items.
 
 *Source Code available in* 
