@@ -38,12 +38,12 @@ This model employs the k-NN algorithm to identify similar users and provide reco
 ### Model 2: Collaborative Filtering using Matrix Factorization
 This model uses matrix factorization techniques to decompose the user-item interaction matrix into latent factors for users and items.
 
-*Source Code available in cf model(k-NN).txt* 
+*Source Code available in cf model(Matrix Factorisation).txt* 
 
-### Model 3: G Neural Network
+### Model 3: Graph Neural Network
 This model uses matrix factorization techniques to decompose the user-item interaction matrix into latent factors for users and items.
 
-*Source Code available in* 
+*Source Code available in gnn model.txt* 
 
 ## Installation
 1. Clone the repository:
